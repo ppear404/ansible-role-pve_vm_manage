@@ -1,0 +1,49 @@
+---
+# tasks for snapshotting running deployed VMs
+- name: Snapshot running deployed VM
+  community.proxmox.proxmox_snap:
+    api_user: "{{ api_user }}"
+    api_token_id: "{{ api_token_id }}"
+    api_token_secret: "{{ api_token_secret }}"
+    validate_certs: false
+    api_host: "{{ api_host }}"
+    vmid: "{{ item.vmid }}"
+    state: present
+    snapname: "{{ snapshot_name }}"
+    description: "{{ snapshot_description }}"
+    timeout: 300
+  loop: "{{ rocky_vms }}"
+  loop_control:
+    label: "{{ item.new_name }}"
+  when: not (rollback | bool)
+
+- name: Roll back deployed VM to snapshot
+  community.proxmox.proxmox_snap:
+    api_user: "{{ api_user }}"
+    api_token_id: "{{ api_token_id }}"
+    api_token_secret: "{{ api_token_secret }}"
+    validate_certs: false
+    api_host: "{{ api_host }}"
+    vmid: "{{ item.vmid }}"
+    state: rollback
+    snapname: "{{ snapshot_name }}"
+    timeout: 300
+  loop: "{{ rocky_vms }}"
+  loop_control:
+    label: "{{ item.new_name }}"
+  when: rollback | bool
+
+- name: Start rolled back VM
+  community.proxmox.proxmox_kvm:
+    node: "{{ pve_node }}"
+    api_user: "{{ api_user }}"
+    api_token_id: "{{ api_token_id }}"
+    api_token_secret: "{{ api_token_secret }}"
+    validate_certs: false
+    api_host: "{{ api_host }}"
+    vmid: "{{ item.vmid }}"
+    state: started
+  loop: "{{ rocky_vms }}"
+  loop_control:
+    label: "{{ item.new_name }}"
+  when: rollback | bool

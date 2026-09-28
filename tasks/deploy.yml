@@ -1,0 +1,85 @@
+---
+# tasks for the deploy vm role
+- name: Validate source template VMIDs
+  ansible.builtin.assert:
+    that:
+      - item | string | length > 0
+      - item | string is match('^[0-9]+$')
+    fail_msg: "Set win_src_id and nix_src_id to numeric Proxmox template VMIDs before deploying."
+  loop: "{{ [win_src_id | default(''), nix_src_id | default('')] }}"
+
+- name: Clone vm template to a new virtual machine
+  community.proxmox.proxmox_kvm:
+    node: "{{ pve_node }}"
+    api_user: "{{ api_user }}"
+    api_token_id: "{{ api_token_id }}"
+    api_token_secret: "{{ api_token_secret }}"
+    validate_certs: false
+    api_host: "{{ api_host }}"
+    storage: "{{ storage_target }}" 		# not allowed when using linked clone
+    clone: template
+    vmid: "{{ item.src_id }}"
+    newid: "{{ item.vmid }}"
+    name: "{{ item.new_name }}"
+    format: raw					# not allowed when using linked clone
+    full: true				 	# set to false for linked clone. io pressure impacted significantly with linked clones
+    protection: false
+    timeout: 1800
+    tags: "{{ lifecycle_tag }}"
+  loop: >-
+    {{ (windows_vms | map('combine', {'src_id': win_src_id}) | list)
+       + (nix_vms | map('combine', {'src_id': nix_src_id}) | list) }}
+  loop_control:
+    label: "{{ item.new_name }}"
+
+- name: Update cloud-init settings on cloned VM
+  community.proxmox.proxmox_kvm:
+    node: "{{ pve_node }}"
+    api_user: "{{ api_user }}"
+    api_token_id: "{{ api_token_id }}"
+    api_token_secret: "{{ api_token_secret }}"
+    validate_certs: false
+    api_host: "{{ api_host }}"
+    vmid: "{{ item.vmid }}"
+    update: true
+    searchdomains: "{{ search_domain }}"
+    nameservers: "{{ nameservers }}"
+    net:
+      net0: "virtio,bridge=vmbr0"
+    ipconfig:
+      ipconfig0: "ip={{ item.ip }},gw={{ item.gateway }}"
+    tags: "{{ lifecycle_tag }}"
+    name: "{{ item.hostname | default(item.new_name) }}"
+  loop: "{{ windows_vms }}"
+  loop_control:
+    label: "{{ item.new_name }}"
+
+- name: Snapshot deployed VM
+  community.proxmox.proxmox_snap:
+    api_user: "{{ api_user }}"
+    api_token_id: "{{ api_token_id }}"
+    api_token_secret: "{{ api_token_secret }}"
+    validate_certs: false
+    api_host: "{{ api_host }}"
+    vmid: "{{ item.vmid }}"
+    state: present
+    snapname: deployed
+    description: "Deployed baseline"
+    timeout: 300
+  loop: "{{ windows_vms + nix_vms }}"
+  loop_control:
+    label: "{{ item.new_name }}"
+
+- name: Start VM
+  community.proxmox.proxmox_kvm:
+    node: "{{ pve_node }}"
+    api_user: "{{ api_user }}"
+    api_token_id: "{{ api_token_id }}"
+    api_token_secret: "{{ api_token_secret }}"
+    validate_certs: false
+    api_host: "{{ api_host }}"
+    vmid: "{{ item.vmid }}"
+    state: started
+  loop: "{{ windows_vms }}"
+  loop_control:
+    label: "{{ item.new_name }}"

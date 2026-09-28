@@ -1,0 +1,41 @@
+---
+- name: Stop VMs
+  community.proxmox.proxmox_kvm:
+    node: "{{ pve_node }}"
+    api_host: "{{ api_host }}"
+    api_user: "{{ api_user }}"
+    api_token_id: "{{ api_token_id }}"
+    api_token_secret: "{{ api_token_secret }}"
+    validate_certs: false
+    vmid: "{{ item.vmid }}"
+    state: stopped
+    force: true
+    timeout: 1800
+  loop: "{{ windows_vms }}"
+  loop_control:
+    label: "{{ item.new_name }}"
+  ignore_errors: true
+
+- name: Destroy VMs
+  community.proxmox.proxmox_kvm:
+    node: "{{ pve_node }}"
+    api_host: "{{ api_host }}"
+    api_user: "{{ api_user }}"
+    api_token_id: "{{ api_token_id }}"
+    api_token_secret: "{{ api_token_secret }}"
+    validate_certs: false
+    vmid: "{{ item.vmid }}"
+    state: absent
+    purge: true
+  loop: "{{ windows_vms }}"
+  loop_control:
+    label: "{{ item.new_name }}"
+  register: destroy_result
+
+- name: Display destruction results
+  ansible.builtin.debug:
+    msg: "VM {{ item.item.vmid }} destroyed"
+  loop: "{{ destroy_result.results }}"
+  loop_control:
+    label: "{{ item.item.new_name }}"
+  when: destroy_result is defined

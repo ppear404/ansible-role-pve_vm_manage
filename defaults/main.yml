@@ -1,0 +1,65 @@
+---
+# defaults file for pve-vmdeploy
+
+# promox node name
+pve_node: "pve1" 
+
+# vm storage pool
+storage_target: "vm-pool01"
+
+lifecycle_tag: "mytag"
+snapshot_name: "running"
+snapshot_description: "Running VM snapshot"
+rollback: false
+
+# search domain
+search_domain: "example.com"
+
+# clone source template ID
+win_src_id: 1002
+nix_src_id: 9022
+
+# environment name server(s)
+nameservers:
+  - '10.1.154.112'
+  #- '192.168.2.2'
+
+# List of VMs to deploy; playbook iterates through this list to deploy each VM. 
+windows_vms:
+  - vmid: 9011
+    new_name: dev-evalstig-dc1
+    hostname: dc1
+    ip: 10.1.154.141/16
+    gateway: 10.1.0.1
+
+  - vmid: 9012
+    new_name: dev-evalstig-ms1
+    hostname: ms1
+    ip: 10.1.154.142/16
+    gateway: 10.1.0.1
+
+nix_vms:
+  - vmid: 9015
+    new_name: dev-evalstig-ol91
+    hostname:  ol91
+    ip: 10.1.154.143/16
+    gateway: 10.1.0.1
+  - vmid: 9016
+    new_name: dev-evalstig-ol91
+    hostname:  ol91
+    ip: 10.1.154.144/16
+    gateway: 10.1.0.1
+
+
+# WARNING: These vars are sensitive and should be stored in a vault or encrypted file. Do not store secrets in plaintext in your playbooks or version control.
+# pve node of host to manage deployment of vms 
+node: pve1
+# pve api connection details
+api_host: pve1.domain.com
+api_user: myapiuser@pve
+api_token_id: mytokenid
+api_token_secret: "my secret goes here"
+
+# optional user creation
+ciuser: myuser
+cipassword: secretpassword

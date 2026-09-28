@@ -1,0 +1,9 @@
+---
+# tasks/main.yml for pve-dev-manager
+- name: Deploy environment
+  ansible.builtin.include_tasks: deploy.yml
+  when: env_up | bool
+
+- name: Destroy environment
+  ansible.builtin.include_tasks: destroy.yml
+  when: not (env_up | bool)
