@@ -1,118 +1,178 @@
-# PVE Dev Manager
+# pve-vmdeploy
 
-Ansible automation for creating, snapshotting, and destroying a Proxmox-hosted Rocky Linux dev environment.
+An Ansible role for cloning template VMs on Proxmox VE, configuring Windows VM
+network settings, creating baseline snapshots, and managing VM lifecycle operations.
 
-The environment is defined once in `vars/main.yml`. Deploy and destroy both use the same
-`rocky_vms` list, so VMIDs, names, IP addresses, and gateways stay aligned across the full
-lifecycle.
+## Current behavior
 
-## Playbooks
+The default entry point, `tasks/main.yml`, selects deployment or destruction using
+`env_up`. You must supply this variable; the role does not define a default.
 
-- `deploy.yml` clones the configured VM list from a Proxmox template, applies cloud-init
-  settings, creates a `deployed` snapshot, and starts each VM.
-- `snap_running.yml` snapshots the configured VM list using the same VMIDs deployed by
-  `deploy.yml`. When `rollback=true`, it rolls back each configured VM to `snapshot_name`
-  and starts the VM afterward. It does not deploy or destroy VMs.
-- `destroy.yml` stops and removes the configured VM list.
+| Operation | Windows VMs (`windows_vms`) | Linux VMs (`nix_vms`) |
+| --- | --- | --- |
+| Clone template (full clone, raw format) | From `win_src_id` | From `nix_src_id` |
+| Update cloud-init/network settings | Yes | No |
+| Create `deployed` baseline snapshot | Yes | Yes |
+| Start after deployment | Yes | No |
+| Stop and destroy when `env_up=false` | Yes | No |
 
-## Required Secrets
+Deployment validates both template IDs, clones the VMs, updates Windows settings,
+creates baseline snapshots, and then starts the Windows VMs. Windows networking
+uses `net0` with VirtIO on `vmbr0` and the configured static IP and gateway.
+Destruction attempts to force-stop Windows VMs (ignoring stop errors), then removes
+them with `purge: true`.
 
-The Proxmox API credentials are expected in `inventory/vault.yml`.
+Snapshot and rollback tasks are available separately through `tasks/snap_running.yml`.
+They still iterate over `rocky_vms`, which has no default. See the snapshot example
+below to select their targets explicitly. Setting `rollback` alone does not select
+these tasks through the default role entry point.
 
-GitLab CI requires one of these variables so it can decrypt the vault:
+## Requirements
 
-- `ANSIBLE_VAULT_PASSWORD`
-- `ANSIBLE_VAULT_PASSWORD_FILE`
+- Ansible with the `community.proxmox` collection and its module dependencies
+  installed in the environment executing the role.
+- Access to the Proxmox API using a token with permissions for the requested VM,
+  storage, and snapshot operations.
+- Existing source templates and target storage supporting the requested clones and
+  snapshots. Windows templates must support the cloud-init settings used here.
+- The role installed as `pve-vmdeploy` in your Ansible roles path.
 
-## Pipeline Variables
+Install the collection with:
 
-Run the pipeline manually, by API, trigger, or upstream pipeline. The pipeline uses these
-variables:
-
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `env_up` | No | `true` | `true` deploys the environment. `false` destroys it. |
-| `snap` | No | `false` | `true` runs only the snapshot job. Deploy and destroy are skipped. |
-| `rollback` | No | `false` | `true` runs only the snapshot job in rollback mode and starts VMs afterward. |
-| `src_id` | Deploy only | none | Numeric VMID of the Proxmox template to clone. Required when `env_up=true`. |
-| `ANSIBLE_PLAYBOOK_EXTRA_ARGS` | No | empty | Optional extra arguments appended to the `ansible-playbook` command. |
-
-Examples:
-
-```text
-env_up=true
-src_id=9000
+```bash
+ansible-galaxy collection install community.proxmox
 ```
 
-```text
-env_up=false
+## Configuration
+
+Defaults are in `defaults/main.yml`; `vars/main.yml` is currently empty. Override
+settings in your calling playbook, inventory, or extra variables. Replace the
+bundled environment values and credential placeholders before use.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `env_up` | Not defined; required for the default entry point | `true` deploys; `false` destroys Windows VMs. |
+| `pve_node` | `pve1` | Proxmox node used by VM tasks. |
+| `storage_target` | `vm-pool01` | Destination storage for full clones. |
+| `win_src_id` | `1002` | Numeric Windows template VMID. |
+| `nix_src_id` | `9022` | Numeric Linux template VMID. |
+| `windows_vms` | Two example VMs | Windows VM definitions. |
+| `nix_vms` | Two example VMs | Linux VM definitions. |
+| `lifecycle_tag` | `mytag` | Tag applied during cloning and Windows updates. |
+| `search_domain` | `example.com` | Windows cloud-init search domain. |
+| `nameservers` | `[10.1.154.112]` | Windows cloud-init DNS servers. |
+| `api_host`, `api_user`, `api_token_id`, `api_token_secret` | Placeholders | Proxmox API connection and token credentials. |
+| `snapshot_name` | `running` | Snapshot name for the separate snapshot/rollback tasks. |
+| `snapshot_description` | `Running VM snapshot` | Description for snapshots created by those tasks. |
+| `rollback` | `false` | Create a snapshot when false; roll back and start targets when true. |
+| `rocky_vms` | Not defined | Target list required by the separate snapshot/rollback tasks. |
+
+Each VM entry supplies `vmid` (destination ID), `new_name` (clone name), `ip` (CIDR),
+and `gateway`. Windows updates use `hostname` as the Proxmox VM name, falling back
+to `new_name` if it is omitted. Linux networking fields are not currently applied.
+Use unique destination VMIDs and replace the example names and addresses.
+
+Both source template IDs must be numeric even if one VM list is empty. Set a VM
+list to `[]` to omit that group.
+
+The defaults also contain `node`, `ciuser`, and `cipassword`, but the current tasks
+do not use them. All API tasks currently set `validate_certs: false`.
+
+## Deploy or destroy
+
+Create a calling playbook such as `manage.yml`:
+
+```yaml
+---
+- name: Manage Proxmox VMs
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - inventory/vault.yml
+  roles:
+    - role: pve-vmdeploy
+      vars:
+        pve_node: pve1
+        storage_target: vm-pool01
+        win_src_id: 1002
+        nix_src_id: 9022
+        search_domain: example.com
+        nameservers:
+          - 10.1.154.112
+        windows_vms:
+          - vmid: 9011
+            new_name: dev-dc1
+            hostname: dc1
+            ip: 10.1.154.141/16
+            gateway: 10.1.0.1
+        nix_vms: []
 ```
 
-```text
-snap=true
-```
-
-```text
-rollback=true
-```
-
-`src_id` is intentionally not hardcoded in `vars/main.yml`; pass it when starting a deploy
-pipeline so the same code can clone from different templates.
-
-When `snap=true` or `rollback=true`, `env_up` and `src_id` are ignored by the deploy/destroy
-job path. The pipeline validates and runs `snap_running.yml` instead.
-
-## VM Inventory
-
-Edit `vars/main.yml` to manage the target environment:
-
-- `rocky_vms[].vmid` is the destination VMID used by both deploy and destroy.
-- `rocky_vms[].new_name` is the VM name passed to Proxmox during clone.
-- `rocky_vms[].hostname` is applied through cloud-init.
-- `rocky_vms[].ip` and `rocky_vms[].gateway` define the VM network settings.
-
-Shared Proxmox and cloud-init settings such as `pve_node`, `storage_target`,
-`search_domain`, `nameservers`, and `lifecycle_tag` are also in `vars/main.yml`.
-Snapshot settings such as `snapshot_name`, `snapshot_description`, and the default
-`rollback` mode are defined there too. `snapshot_name` defaults to `running`; rollback uses
-that same snapshot name.
-
-## Local Usage
+Create `inventory/vault.yml` yourself and encrypt it with Ansible Vault. Supply
+`api_host`, `api_user`, `api_token_id`, and `api_token_secret` there. The role does
+not automatically load a vault file.
 
 Deploy:
 
 ```bash
-ansible-playbook -i localhost, --vault-password-file .vault-pass deploy.yml \
-  --extra-vars "src_id=9000"
+ansible-playbook -i localhost, manage.yml --ask-vault-pass \
+  --extra-vars '{"env_up": true}'
 ```
 
-Destroy:
+Stop and permanently remove the configured Windows VMs:
 
 ```bash
-ansible-playbook -i localhost, --vault-password-file .vault-pass destroy.yml
+ansible-playbook -i localhost, manage.yml --ask-vault-pass \
+  --extra-vars '{"env_up": false}'
 ```
 
-Snapshot configured VMs:
+## Snapshot or roll back
+
+Use `include_role` with `tasks_from` to invoke the snapshot tasks directly. For
+example, create `snapshot.yml`:
+
+```yaml
+---
+- name: Snapshot selected Proxmox VMs
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - inventory/vault.yml
+  tasks:
+    - name: Manage snapshots
+      ansible.builtin.include_role:
+        name: pve-vmdeploy
+        tasks_from: snap_running
+      vars:
+        rocky_vms:
+          - vmid: 9011
+            new_name: dev-dc1
+        snapshot_name: running
+```
+
+Select VMIDs matching your deployed environment. These tasks act on every listed
+VM; they do not discover or filter VMs by running state. Snapshot targets only
+need `vmid` and `new_name`.
+
+Create snapshots:
 
 ```bash
-ansible-playbook -i localhost, --vault-password-file .vault-pass snap_running.yml
+ansible-playbook -i localhost, snapshot.yml --ask-vault-pass
 ```
 
-Roll back configured VMs to `snapshot_name` and start them:
+Roll back to an existing snapshot and start each selected VM afterward:
 
 ```bash
-ansible-playbook -i localhost, --vault-password-file .vault-pass snap_running.yml \
-  --extra-vars "rollback=true"
+ansible-playbook -i localhost, snapshot.yml --ask-vault-pass \
+  --extra-vars '{"rollback": true, "snapshot_name": "running"}'
 ```
 
-## CI Flow
+The deployment baseline is always named `deployed`; `snapshot_name` only controls
+the separate snapshot/rollback tasks. Pass `snapshot_name=deployed` to roll back
+to that baseline.
 
-The pipeline has two stages:
-
-1. `validate` selects `snap_running.yml` when `snap=true` or `rollback=true`; otherwise it
-   selects `deploy.yml` or `destroy.yml` from `env_up`. It then runs an Ansible syntax check.
-2. `manage_vms` runs deploy or destroy when `snap=false` and `rollback=false`.
-3. `snapshot_running_vms` runs `snap_running.yml` when `snap=true` or `rollback=true`.
-
-The `proxmox-dev-vms` resource group serializes environment changes so deploy, destroy, and
-snapshot jobs do not run against the same VM set at the same time.
+This repository contains role task files, not standalone lifecycle playbooks or a
+GitLab CI pipeline. Run the calling playbooks above rather than invoking files
+under `tasks/` with `ansible-playbook`.
