@@ -64,7 +64,7 @@
       ipconfig0: "ip={{ item.ip }},gw={{ item.gateway }}"
     tags: "{{ lifecycle_tag }}"
     name: "{{ item.hostname | default(item.new_name) }}"
-  loop: "{{ windows_vms }}"
+  loop: "{{ windows_vms + nix_vms }}"
   loop_control:
     label: "{{ item.new_name }}"
 
@@ -94,6 +94,6 @@
     api_host: "{{ api_host }}"
     vmid: "{{ item.vmid }}"
     state: started
-  loop: "{{ windows_vms }}"
+  loop: "{{ windows_vms + nix_vms }}"
   loop_control:
     label: "{{ item.new_name }}"
