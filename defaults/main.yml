@@ -53,12 +53,12 @@ nix_vms:
 
 # WARNING: These vars are sensitive and should be stored in a vault or encrypted file. Do not store secrets in plaintext in your playbooks or version control.
 # pve node of host to manage deployment of vms 
-node: pve1
-# pve api connection details
-api_host: pve1.domain.com
-api_user: myapiuser@pve
-api_token_id: mytokenid
-api_token_secret: "my secret goes here"
+# node: pve1
+### pve api connection details
+#api_host: pve1.domain.com
+#api_user: myapiuser@pve
+#api_token_id: mytokenid
+#api_token_secret: "my secret goes here"
 
 # optional user creation
 ciuser: myuser
