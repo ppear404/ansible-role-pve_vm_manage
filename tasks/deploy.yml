@@ -8,6 +8,20 @@
     fail_msg: "Set win_src_id and nix_src_id to numeric Proxmox template VMIDs before deploying."
   loop: "{{ [win_src_id | default(''), nix_src_id | default('')] }}"
 
+- name: Validate Proxmox API credentials
+  ansible.builtin.assert:
+    that:
+      - api_host is defined
+      - api_user is defined
+      - api_token_id is defined
+      - api_token_secret is defined
+      - api_host | length > 0
+      - api_user | length > 0
+      - api_token_id | length > 0
+      - api_token_secret | length > 0
+    fail_msg: "Proxmox API credentials were not provided."
+  no_log: true
+
 - name: Clone vm template to a new virtual machine
   community.proxmox.proxmox_kvm:
     node: "{{ pve_node }}"
