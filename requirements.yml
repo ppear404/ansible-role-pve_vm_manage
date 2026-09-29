@@ -1,0 +1,5 @@
+---
+roles:
+  - name: pve_vm_manage
+    src: https://github.com/ppear404/ansible-role-pve_vm_manage.git
+    version: main
