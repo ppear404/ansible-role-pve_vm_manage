@@ -1,0 +1,7 @@
+---
+- name: Deploy Proxmox virtual machines
+  hosts: localhost
+  gather_facts: false
+
+  roles:
+    - role: pve_vm_manage
