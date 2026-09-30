@@ -55,7 +55,7 @@
     validate_certs: false
     api_host: "{{ api_host }}"
     vmid: "{{ item.vmid }}"
-    update: false
+    update: true
     searchdomains: "{{ search_domain }}"
     nameservers: "{{ nameservers }}"
     net:
