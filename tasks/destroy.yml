@@ -11,7 +11,7 @@
     state: stopped
     force: true
     timeout: 1800
-  loop: "{{ windows_vms }}"
+  loop: "{{ windows_vms + nix_vms }}"
   loop_control:
     label: "{{ item.new_name }}"
   ignore_errors: true
@@ -27,7 +27,7 @@
     vmid: "{{ item.vmid }}"
     state: absent
     purge: true
-  loop: "{{ windows_vms }}"
+  loop: "{{ windows_vms + nix_vms }}"
   loop_control:
     label: "{{ item.new_name }}"
   register: destroy_result
